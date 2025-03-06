@@ -23,6 +23,9 @@ class Shape:
     def from_dict(data):
         raise NotImplementedError("Метод from_dict должен быть реализован в подклассах")
 
+    def get_bounds(self):
+        raise NotImplementedError("Метод get_bounds должен быть реализован в подклассах")
+
 # Класс круга
 class Circle(Shape):
     def __init__(self, x, y, radius, color):
@@ -40,6 +43,9 @@ class Circle(Shape):
     @staticmethod
     def from_dict(data):
         return Circle(data["x"], data["y"], data["radius"], data["color"])
+
+    def get_bounds(self):
+        return (self.x - self.radius, self.y - self.radius, self.x + self.radius, self.y + self.radius)
 
 # Класс прямоугольника
 class Rectangle(Shape):
@@ -59,6 +65,9 @@ class Rectangle(Shape):
     @staticmethod
     def from_dict(data):
         return Rectangle(data["x"], data["y"], data["width"], data["height"], data["color"])
+
+    def get_bounds(self):
+        return (self.x, self.y, self.x + self.width, self.y + self.height)
 
 # Класс линии
 class Line(Shape):
@@ -85,6 +94,13 @@ class Line(Shape):
     def from_dict(data):
         return Line(data["x1"], data["y1"], data["x2"], data["y2"], data["color"])
 
+    def get_bounds(self):
+        min_x = min(self.x, self.x2)
+        min_y = min(self.y, self.y2)
+        max_x = max(self.x, self.x2)
+        max_y = max(self.y, self.y2)
+        return (min_x, min_y, max_x, max_y)
+
 # Класс холста
 class CanvasApp:
     def __init__(self, master):
@@ -99,7 +115,6 @@ class CanvasApp:
         self.canvas = tk.Canvas(self.frame, width=800, height=600, bg="white",
                                 xscrollcommand=self.hbar.set, yscrollcommand=self.vbar.set)
         self.canvas.pack(side="left", fill="both", expand=True)
-
         self.hbar.config(command=self.canvas.xview)
         self.vbar.config(command=self.canvas.yview)
 
@@ -142,11 +157,10 @@ class CanvasApp:
 
     def update_scrollregion(self):
         if self.shapes:
-            min_x = min(shape.x for _, shape in self.shapes)
-            min_y = min(shape.y for _, shape in self.shapes)
-            max_x = max(shape.x + (getattr(shape, 'width', 0) or shape.radius * 2) for _, shape in self.shapes)
-            max_y = max(shape.y + (getattr(shape, 'height', 0) or shape.radius * 2) for _, shape in self.shapes)
-           
+            min_x = min(shape.get_bounds()[0] for _, shape in self.shapes)
+            min_y = min(shape.get_bounds()[1] for _, shape in self.shapes)
+            max_x = max(shape.get_bounds()[2] for _, shape in self.shapes)
+            max_y = max(shape.get_bounds()[3] for _, shape in self.shapes)
             self.canvas.config(scrollregion=(min_x - 50, min_y - 50, max_x + 50, max_y + 50))
         else:
             self.canvas.config(scrollregion=(0, 0, 800, 600))
@@ -169,12 +183,13 @@ class CanvasApp:
             elif shape_data["type"] == "rectangle":
                 shape = Rectangle.from_dict(shape_data)
             elif shape_data["type"] == "line":
-                 shape = Line.from_dict(shape_data)
-        app.shapes.append((id_, shape))  
+                shape = Line.from_dict(shape_data)
+            app.shapes.append((id_, shape))
         app.set_background(app.background)  
         app.redraw()                        
         return app
-    
+
+# Классы команд и истории
 class Command:
     def execute(self):
         raise NotImplementedError("Метод execute должен быть реализован")
@@ -184,29 +199,29 @@ class Command:
     
 class AddShapeCommand(Command):
     def __init__(self, canvas_app, shape):
-        self.canvas_app = canvas_app  # Ссылка на объект приложения
-        self.shape = shape           # Фигура, которую добавляем
-        self.shape_id = None         # ID добавленной фигуры
+        self.canvas_app = canvas_app
+        self.shape = shape
+        self.shape_id = None
 
     def execute(self):
-        self.shape_id = self.canvas_app.next_id  # Предполагается, что next_id генерирует уникальный ID
-        self.canvas_app.add_shape(self.shape)    # Метод добавления фигуры
+        self.shape_id = self.canvas_app.next_id
+        self.canvas_app.add_shape(self.shape)
 
     def undo(self):
-        self.canvas_app.erase_shape(self.shape_id)  # Метод удаления фигуры
+        self.canvas_app.erase_shape(self.shape_id)
 
 class EraseShapeCommand(Command):
     def __init__(self, canvas_app, shape_id):
         self.canvas_app = canvas_app
         self.shape_id = shape_id
-        self.shape = None  # Для хранения удалённой фигуры
+        self.shape = None
 
     def execute(self):
-        self.shape = self.canvas_app.erase_shape(self.shape_id)  # Сохраняем фигуру перед удалением
+        self.shape = self.canvas_app.erase_shape(self.shape_id)
 
     def undo(self):
         if self.shape:
-            self.canvas_app.add_shape(self.shape)  # Восстанавливаем фигуру
+            self.canvas_app.add_shape(self.shape)
 
 class MoveShapeCommand(Command):
     def __init__(self, canvas_app, shape_id, new_x, new_y):
@@ -214,11 +229,11 @@ class MoveShapeCommand(Command):
         self.shape_id = shape_id
         self.new_x = new_x
         self.new_y = new_y
-        self.old_x = None  # Для хранения старой позиции
+        self.old_x = None
         self.old_y = None
 
     def execute(self):
-        for id_, shape in self.canvas_app.shapes:  # Предполагается, что shapes — список фигур
+        for id_, shape in self.canvas_app.shapes:
             if id_ == self.shape_id:
                 self.old_x = shape.x
                 self.old_y = shape.y
@@ -236,35 +251,35 @@ class SetBackgroundCommand(Command):
         self.old_color = None
 
     def execute(self):
-        self.old_color = self.canvas_app.background  # Сохраняем текущий цвет
-        self.canvas_app.set_background(self.new_color)  # Устанавливаем новый цвет
+        self.old_color = self.canvas_app.background
+        self.canvas_app.set_background(self.new_color)
 
     def undo(self):
-        self.canvas_app.set_background(self.old_color)  # Восстанавливаем старый цвет
+        self.canvas_app.set_background(self.old_color)
 
 class History:
     def __init__(self):
-        self.undo_stack = []  # Стек для отмены действий
-        self.redo_stack = []  # Стек для повтора действий
+        self.undo_stack = []
+        self.redo_stack = []
 
     def execute_command(self, command):
-        command.execute()          # Выполняем команду
-        self.undo_stack.append(command)  # Добавляем в стек отмены
-        self.redo_stack.clear()    # Очищаем стек повтора
+        command.execute()
+        self.undo_stack.append(command)
+        self.redo_stack.clear()
 
     def undo(self):
         if self.undo_stack:
-            command = self.undo_stack.pop()  # Берём последнюю команду
-            command.undo()                   # Отменяем её
-            self.redo_stack.append(command)  # Добавляем в стек повтора
+            command = self.undo_stack.pop()
+            command.undo()
+            self.redo_stack.append(command)
         else:
             print("Нет действий для отмены")
 
     def redo(self):
         if self.redo_stack:
-            command = self.redo_stack.pop()  # Берём команду из стека повтора
-            command.execute()                # Выполняем её
-            self.undo_stack.append(command)  # Добавляем в стек отмены
+            command = self.redo_stack.pop()
+            command.execute()
+            self.undo_stack.append(command)
         else:
             print("Нет действий для повтора")
 
@@ -297,6 +312,7 @@ class PaintApp:
         edit_menu.add_command(label="Удалить фигуру", command=self.erase_shape)
         edit_menu.add_command(label="Переместить фигуру", command=self.move_shape)
         edit_menu.add_command(label="Установить фон", command=self.set_background)
+
         Button(master, text="Undo", command=self.undo).pack(side="left")
         Button(master, text="Redo", command=self.redo).pack(side="left")
 
@@ -306,7 +322,7 @@ class PaintApp:
         radius = simpledialog.askinteger("Ввод", "Введите радиус:")
         color = simpledialog.askstring("Ввод", "Введите цвет:")
         if x and y and radius and color:
-            circle = Circle(x, y, radius, color)  
+            circle = Circle(x, y, radius, color)
             command = AddShapeCommand(self.canvas_app, circle)
             self.history.execute_command(command)
 
