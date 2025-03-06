@@ -89,11 +89,6 @@ class Line(Shape):
 class CanvasApp:
     def __init__(self, master):
         self.master = master
-        self.canvas = tk.Canvas(master, width=800, height=600, bg="white")
-        self.canvas.pack()
-        self.shapes = []
-        self.background = "white"
-        self.next_id = 1
         self.frame = tk.Frame(master)
         self.frame.pack(fill="both", expand=True)
         self.hbar = tk.Scrollbar(self.frame, orient="horizontal")
@@ -154,8 +149,8 @@ class CanvasApp:
            
             self.canvas.config(scrollregion=(min_x - 50, min_y - 50, max_x + 50, max_y + 50))
         else:
-            # Если фигур нет, задаем область по умолчанию
             self.canvas.config(scrollregion=(0, 0, 800, 600))
+
     def to_dict(self):
         return {
             "background": self.background,
